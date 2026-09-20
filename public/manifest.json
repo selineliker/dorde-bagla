@@ -1,0 +1,18 @@
+{
+  "name": "Dörde Bağla",
+  "short_name": "Dörde Bağla",
+  "description": "Arkadaşınla online Dörde Bağla (Connect 4) oyna!",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

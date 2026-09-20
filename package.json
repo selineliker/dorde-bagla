@@ -1,0 +1,14 @@
+{
+  "name": "dorde-bagla",
+  "version": "1.0.0",
+  "description": "Online multiplayer Connect 4 (Dörde Bağla) oyunu",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}

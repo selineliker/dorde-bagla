@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dörde Bağla — Online</title>
+  <meta name="description" content="Arkadaşınla online Dörde Bağla (Connect 4) oyna!">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Dörde Bağla">
+  <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-512.png">
+  <link rel="icon" type="image/png" href="/icon-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ═══════════ GİRİŞ EKRANI ═══════════ -->
+  <div id="lobby-screen" class="screen active">
+    <div class="lobby-container">
+      <div class="logo-section">
+        <div class="logo-icon">
+          <div class="logo-dots">
+            <span class="dot red"></span><span class="dot yellow"></span>
+            <span class="dot yellow"></span><span class="dot red"></span>
+          </div>
+        </div>
+        <h1>Dörde Bağla</h1>
+        <p class="subtitle">Arkadaşınla online oyna!</p>
+      </div>
+
+      <div class="input-group">
+        <label for="player-name">İsmin</label>
+        <input type="text" id="player-name" placeholder="İsmini gir..." maxlength="15" autocomplete="off">
+      </div>
+
+      <div class="lobby-buttons">
+        <button id="btn-create" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Oda Oluştur
+        </button>
+        <button id="btn-join-toggle" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Odaya Katıl
+        </button>
+      </div>
+
+      <div id="join-section" class="join-section hidden">
+        <div class="input-group">
+          <label for="room-code-input">Oda Kodu</label>
+          <input type="text" id="room-code-input" placeholder="ABCD" maxlength="4" autocomplete="off" style="text-transform: uppercase; text-align: center; font-size: 1.5rem; letter-spacing: 0.5rem;">
+        </div>
+        <button id="btn-join" class="btn btn-primary">Katıl</button>
+      </div>
+
+      <p id="lobby-error" class="error-msg hidden"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════ BEKLEYİŞ EKRANI ═══════════ -->
+  <div id="waiting-screen" class="screen">
+    <div class="waiting-container">
+      <div class="spinner"></div>
+      <h2>Rakip Bekleniyor...</h2>
+      <p>Oda kodunu arkadaşına gönder:</p>
+      <div class="room-code-display">
+        <span id="room-code-text"></span>
+        <button id="btn-copy-code" class="btn-copy" title="Kopyala">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </div>
+      <p class="copy-hint" id="copy-hint">Kodu kopyalamak için tıkla</p>
+    </div>
+  </div>
+
+  <!-- ═══════════ OYUN EKRANI ═══════════ -->
+  <div id="game-screen" class="screen">
+    <div class="game-container">
+      <!-- Üst bar -->
+      <div class="game-header">
+        <div class="player-info player1-info">
+          <span class="player-score" id="score-p1">0</span>
+          <span class="player-label" id="name-p1">Sen</span>
+        </div>
+        <div class="vs-badge">VS</div>
+        <div class="player-info player2-info">
+          <span class="player-label" id="name-p2">Rakip</span>
+          <span class="player-score" id="score-p2">0</span>
+        </div>
+      </div>
+
+      <!-- Sıra göstergesi -->
+      <div class="turn-indicator" id="turn-indicator">
+        <span class="turn-dot" id="turn-dot"></span>
+        <span id="turn-text">Sıra sende!</span>
+      </div>
+
+      <!-- Oyun tahtası -->
+      <div class="board-wrapper">
+        <div class="board-glow" id="board-glow"></div>
+        <div class="board" id="board">
+          <!-- JS ile doldurulacak -->
+        </div>
+      </div>
+
+      <!-- Sonuç ekranı (overlay) -->
+      <div id="game-over-overlay" class="game-over-overlay hidden">
+        <div class="game-over-card">
+          <div class="game-over-emoji" id="game-over-emoji">🎉</div>
+          <h2 id="game-over-title">Kazandın!</h2>
+          <p id="game-over-subtitle">Tebrikler!</p>
+          <button id="btn-play-again" class="btn btn-primary">Tekrar Oyna</button>
+          <p id="rematch-status" class="rematch-status hidden"></p>
+        </div>
+      </div>
+
+      <!-- Rakip ayrıldı -->
+      <div id="disconnect-overlay" class="game-over-overlay hidden">
+        <div class="game-over-card">
+          <div class="game-over-emoji">😢</div>
+          <h2>Rakip Ayrıldı</h2>
+          <p>Bağlantı koptu.</p>
+          <button id="btn-back-lobby" class="btn btn-primary">Lobiye Dön</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
