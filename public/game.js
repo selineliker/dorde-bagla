@@ -189,6 +189,8 @@ function updateTurnIndicator() {
 }
 
 function updateScores(scores) {
+  // game-start'ta renkler swap ediliyor, bu yüzden
+  // sol taraf her zaman "Sen", sağ taraf her zaman "Rakip"
   if (state.myPlayerNumber === 1) {
     els.scoreP1.textContent = scores[0];
     els.scoreP2.textContent = scores[1];
@@ -283,23 +285,38 @@ socket.on('game-start', ({ board, currentTurn, player1, player2, scores }) => {
   state.currentTurn = currentTurn;
   state.gameActive = true;
 
-  // İsimleri ayarla
+  // İsimleri ve renkleri doğru eşleştir
+  const p1Info = document.querySelector('.player1-info');
+  const p2Info = document.querySelector('.player2-info');
+
   if (state.myPlayerNumber === 1) {
+    // Ben kırmızıyım (player1)
     els.nameP1.textContent = 'Sen';
     els.nameP2.textContent = player2;
+    els.scoreP1.textContent = scores[0];
+    els.scoreP2.textContent = scores[1];
+    // Renkler: Sol=kırmızı(ben), Sağ=sarı(rakip)
+    p1Info.className = 'player-info player1-info';
+    p2Info.className = 'player-info player2-info';
   } else {
+    // Ben sarıyım (player2)
     els.nameP1.textContent = 'Sen';
     els.nameP2.textContent = player1;
+    els.scoreP1.textContent = scores[1];
+    els.scoreP2.textContent = scores[0];
+    // Renkler: Sol=sarı(ben), Sağ=kırmızı(rakip)
+    p1Info.className = 'player-info player2-info';
+    p2Info.className = 'player-info player1-info';
   }
 
-  updateScores(scores);
   renderBoard(board);
   updateTurnIndicator();
 
-  // Overlay'leri gizle
+  // Overlay'leri gizle ve butonları sıfırla
   els.gameOverOverlay.classList.add('hidden');
   els.disconnectOverlay.classList.add('hidden');
   els.rematchStatus.classList.add('hidden');
+  els.btnPlayAgain.style.display = '';
 
   showScreen('game');
 });
@@ -323,13 +340,17 @@ socket.on('game-over', ({ winner, winnerName, winCells, scores }) => {
     highlightWinCells(winCells);
   }
 
+  // Kazanan kontrolü — parseInt ile tip uyumsuzluğunu önle
+  const winnerNum = parseInt(winner);
+  const myNum = parseInt(state.myPlayerNumber);
+
   setTimeout(() => {
-    if (winner === 0) {
+    if (winnerNum === 0) {
       // Beraberlik
       els.gameOverEmoji.textContent = '🤝';
       els.gameOverTitle.textContent = 'Berabere!';
       els.gameOverSubtitle.textContent = 'İyi mücadeleydi!';
-    } else if (winner === state.myPlayerNumber) {
+    } else if (winnerNum === myNum) {
       // Kazandın
       els.gameOverEmoji.textContent = '🎉';
       els.gameOverTitle.textContent = 'Kazandın!';
