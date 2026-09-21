@@ -14,11 +14,32 @@ const socket = io({
 // ── Bağlantı durumu ───────────────────────
 socket.on('connect', () => {
   console.log('✅ Sunucuya bağlandı:', socket.id);
+
+  // Otomatik yeniden bağlanma — kayıtlı oda varsa rejoin et
+  const saved = sessionStorage.getItem('dordeBaglaRoom');
+  if (saved) {
+    try {
+      const info = JSON.parse(saved);
+      console.log('🔄 Odaya yeniden bağlanılıyor:', info.code);
+      socket.emit('rejoin-room', info);
+    } catch (e) {
+      sessionStorage.removeItem('dordeBaglaRoom');
+    }
+  }
 });
 
 socket.on('connect_error', (err) => {
   console.log('❌ Bağlantı hatası:', err.message);
 });
+
+// Oda bilgisini kaydet
+function saveRoomInfo(code, playerNumber, playerName) {
+  sessionStorage.setItem('dordeBaglaRoom', JSON.stringify({ code, playerNumber, playerName }));
+}
+
+function clearRoomInfo() {
+  sessionStorage.removeItem('dordeBaglaRoom');
+}
 
 // ── DOM Elemanları ─────────────────────────
 const screens = {
@@ -257,9 +278,10 @@ function highlightWinCells(winCells) {
 // ── SOCKET OLAYLARI ────────────────────────
 
 // Oda oluşturuldu
-socket.on('room-created', ({ code, playerNumber }) => {
+socket.on('room-created', ({ code, playerNumber, playerName }) => {
   state.myPlayerNumber = playerNumber;
   els.roomCodeText.textContent = code;
+  saveRoomInfo(code, playerNumber, playerName || state.myName);
   showScreen('waiting');
 });
 
@@ -269,9 +291,49 @@ socket.on('join-error', (msg) => {
 });
 
 // Odaya katıldım
-socket.on('room-joined', ({ playerNumber, opponentName }) => {
+socket.on('room-joined', ({ code, playerNumber, playerName, opponentName }) => {
   state.myPlayerNumber = playerNumber;
   state.opponentName = opponentName;
+  saveRoomInfo(code, playerNumber, playerName || state.myName);
+});
+
+// Yeniden bağlanma başarılı
+socket.on('rejoin-success', ({ code, playerNumber, board, currentTurn, gameActive, player1, player2, scores }) => {
+  state.myPlayerNumber = playerNumber;
+  state.board = board;
+  state.currentTurn = currentTurn;
+  state.gameActive = gameActive;
+
+  const p1Info = document.querySelector('.player1-info');
+  const p2Info = document.querySelector('.player2-info');
+
+  if (state.myPlayerNumber === 1) {
+    els.nameP1.textContent = 'Sen';
+    els.nameP2.textContent = player2;
+    els.scoreP1.textContent = scores[0];
+    els.scoreP2.textContent = scores[1];
+    p1Info.className = 'player-info player1-info';
+    p2Info.className = 'player-info player2-info';
+  } else {
+    els.nameP1.textContent = 'Sen';
+    els.nameP2.textContent = player1;
+    els.scoreP1.textContent = scores[1];
+    els.scoreP2.textContent = scores[0];
+    p1Info.className = 'player-info player2-info';
+    p2Info.className = 'player-info player1-info';
+  }
+
+  renderBoard(board);
+  updateTurnIndicator();
+  els.gameOverOverlay.classList.add('hidden');
+  els.disconnectOverlay.classList.add('hidden');
+  showScreen('game');
+  console.log('✅ Odaya yeniden bağlanıldı!');
+});
+
+socket.on('rejoin-error', () => {
+  clearRoomInfo();
+  // Lobiye dön
 });
 
 // Rakip katıldı (oda sahibine)
@@ -336,35 +398,37 @@ socket.on('game-over', ({ winner, winnerName, winCells, scores }) => {
   state.gameActive = false;
   updateScores(scores);
 
-  if (winCells) {
-    highlightWinCells(winCells);
-  }
-
-  // Kazanan kontrolü — parseInt ile tip uyumsuzluğunu önle
   const winnerNum = parseInt(winner);
   const myNum = parseInt(state.myPlayerNumber);
 
+  // ── Zamanlama: taş düşsün → 4'lü parlasın → sonuç ekranı ──
+  // Adım 1: Taş düşme animasyonu (move-made zaten oynatıyor) → 600ms bekle
   setTimeout(() => {
-    if (winnerNum === 0) {
-      // Beraberlik
-      els.gameOverEmoji.textContent = '🤝';
-      els.gameOverTitle.textContent = 'Berabere!';
-      els.gameOverSubtitle.textContent = 'İyi mücadeleydi!';
-    } else if (winnerNum === myNum) {
-      // Kazandın
-      els.gameOverEmoji.textContent = '🎉';
-      els.gameOverTitle.textContent = 'Kazandın!';
-      els.gameOverSubtitle.textContent = 'Tebrikler! 🏆';
-      launchConfetti();
-    } else {
-      // Kaybettin
-      els.gameOverEmoji.textContent = '😔';
-      els.gameOverTitle.textContent = 'Kaybettin!';
-      els.gameOverSubtitle.textContent = `${winnerName} kazandı.`;
+    // Adım 2: Kazanan 4'lüyü vurgula (2 saniye yanıp sönsün)
+    if (winCells) {
+      highlightWinCells(winCells);
     }
 
-    els.gameOverOverlay.classList.remove('hidden');
-  }, 800);
+    // Adım 3: 2.5 saniye sonra sonuç ekranını göster
+    setTimeout(() => {
+      if (winnerNum === 0) {
+        els.gameOverEmoji.textContent = '🤝';
+        els.gameOverTitle.textContent = 'Berabere!';
+        els.gameOverSubtitle.textContent = 'İyi mücadeleydi!';
+      } else if (winnerNum === myNum) {
+        els.gameOverEmoji.textContent = '🎉';
+        els.gameOverTitle.textContent = 'Kazandın!';
+        els.gameOverSubtitle.textContent = 'Tebrikler! 🏆';
+        launchConfetti();
+      } else {
+        els.gameOverEmoji.textContent = '😔';
+        els.gameOverTitle.textContent = 'Kaybettin!';
+        els.gameOverSubtitle.textContent = `${winnerName} kazandı.`;
+      }
+
+      els.gameOverOverlay.classList.remove('hidden');
+    }, 2500);
+  }, 600);
 });
 
 // Tekrar oyna
@@ -381,14 +445,27 @@ socket.on('opponent-wants-rematch', () => {
   els.rematchStatus.classList.remove('hidden');
 });
 
-// Rakip ayrıldı
+// Rakip geçici bağlantı kopması
+socket.on('opponent-connection-lost', () => {
+  els.turnText.textContent = 'Rakibin bağlantısı koptu, bekleniyor...';
+  els.turnDot.classList.add('waiting');
+});
+
+// Rakip geri döndü
+socket.on('opponent-reconnected', () => {
+  updateTurnIndicator();
+});
+
+// Rakip kalıcı olarak ayrıldı (60 sn geçti)
 socket.on('opponent-disconnected', () => {
   state.gameActive = false;
+  clearRoomInfo();
   els.gameOverOverlay.classList.add('hidden');
   els.disconnectOverlay.classList.remove('hidden');
 });
 
 // Lobiye dön
 els.btnBackLobby.addEventListener('click', () => {
+  clearRoomInfo();
   location.reload();
 });
