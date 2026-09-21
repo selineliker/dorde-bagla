@@ -489,26 +489,27 @@ body {
 
 /* Kazanan hücre vurgusu */
 .cell.win-cell {
-  animation: winPulse 0.8s ease-in-out infinite alternate;
+  animation: winPulse 0.4s ease-in-out infinite alternate;
+  z-index: 10;
 }
 
 .cell.win-cell::before {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -5px;
   border-radius: 50%;
   border: 3px solid var(--green);
-  box-shadow: 0 0 16px var(--green-glow), inset 0 0 16px var(--green-glow);
-  animation: winRing 1s ease-in-out infinite alternate;
+  box-shadow: 0 0 20px var(--green-glow), 0 0 40px var(--green-glow), inset 0 0 20px var(--green-glow);
+  animation: winRing 0.4s ease-in-out infinite alternate;
 }
 
 @keyframes winPulse {
-  from { transform: scale(1); }
-  to { transform: scale(1.06); }
+  from { transform: scale(1); filter: brightness(1); }
+  to { transform: scale(1.12); filter: brightness(1.4); }
 }
 
 @keyframes winRing {
-  from { opacity: 0.6; }
+  from { opacity: 0.5; }
   to { opacity: 1; }
 }
 
