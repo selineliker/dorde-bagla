@@ -6,14 +6,19 @@ const socket = io({
   transports: ['polling', 'websocket'],
   upgrade: true,
   reconnection: true,
-  reconnectionAttempts: 10,
-  reconnectionDelay: 1000,
-  timeout: 20000,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 5000,
+  timeout: 30000,
 });
 
 // ── Bağlantı durumu ───────────────────────
 socket.on('connect', () => {
   console.log('✅ Sunucuya bağlandı:', socket.id);
+
+  // Bağlantı göstergesini kaldır
+  const banner = document.getElementById('connection-banner');
+  if (banner) banner.classList.add('hidden');
 
   // Otomatik yeniden bağlanma — kayıtlı oda varsa rejoin et
   const saved = sessionStorage.getItem('dordeBaglaRoom');
@@ -28,9 +33,30 @@ socket.on('connect', () => {
   }
 });
 
+socket.on('disconnect', () => {
+  console.log('⚠️ Bağlantı koptu, yeniden bağlanılıyor...');
+  showConnectionBanner('Bağlantı koptu, yeniden bağlanılıyor...');
+});
+
+socket.on('reconnect_attempt', (attempt) => {
+  showConnectionBanner(`Yeniden bağlanılıyor... (${attempt})`);
+});
+
 socket.on('connect_error', (err) => {
   console.log('❌ Bağlantı hatası:', err.message);
 });
+
+function showConnectionBanner(text) {
+  let banner = document.getElementById('connection-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'connection-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#ff3b4a;color:#fff;text-align:center;padding:8px;font-size:0.85rem;font-weight:600;z-index:9999;font-family:Inter,sans-serif;';
+    document.body.prepend(banner);
+  }
+  banner.textContent = text;
+  banner.classList.remove('hidden');
+}
 
 // Oda bilgisini kaydet
 function saveRoomInfo(code, playerNumber, playerName) {
