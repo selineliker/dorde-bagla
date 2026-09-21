@@ -211,7 +211,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (!room.playAgainVotes) room.playAgainVotes = new Set();
-    room.playAgainVotes.add(socket.id);
+    room.playAgainVotes.add(socket.playerNumber); // socket.id yerine playerNumber kullan
 
     if (room.playAgainVotes.size === 2) {
       room.board = createEmptyBoard();
@@ -237,18 +237,83 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Bağlantı kopması
+  // ── Odaya yeniden bağlanma (reconnect) ──────────────────
+  socket.on('rejoin-room', ({ code, playerNumber, playerName }) => {
+    const roomCode = code.toUpperCase().trim();
+    const room = rooms.get(roomCode);
+
+    if (!room) {
+      socket.emit('rejoin-error', 'Oda artık mevcut değil.');
+      return;
+    }
+
+    const playerIndex = playerNumber - 1;
+    if (playerIndex < 0 || playerIndex >= room.players.length) {
+      socket.emit('rejoin-error', 'Geçersiz oyuncu.');
+      return;
+    }
+
+    // Disconnect timer'ı iptal et
+    if (room.disconnectTimers && room.disconnectTimers[playerIndex]) {
+      clearTimeout(room.disconnectTimers[playerIndex]);
+      room.disconnectTimers[playerIndex] = null;
+      console.log(`Reconnect timer iptal: Oyuncu ${playerNumber} (${playerName})`);
+    }
+
+    // Oyuncu bilgilerini güncelle
+    room.players[playerIndex].id = socket.id;
+    socket.join(roomCode);
+    socket.roomCode = roomCode;
+    socket.playerNumber = playerNumber;
+
+    // Diğer oyuncuya bildir
+    const otherPlayer = room.players.find((p, i) => i !== playerIndex);
+    if (otherPlayer) {
+      io.to(otherPlayer.id).emit('opponent-reconnected');
+    }
+
+    // Mevcut oyun durumunu gönder
+    socket.emit('rejoin-success', {
+      code: roomCode,
+      playerNumber,
+      board: room.board,
+      currentTurn: room.currentTurn,
+      gameActive: room.gameActive,
+      player1: room.players[0].name,
+      player2: room.players[1].name,
+      scores: [room.players[0].score, room.players[1].score],
+    });
+
+    console.log(`Yeniden bağlandı: ${playerName} (Oyuncu ${playerNumber}) → Oda ${roomCode}`);
+  });
+
+  // ── Bağlantı kopması (60 sn tolerans) ──────────────────
   socket.on('disconnect', () => {
-    console.log(`Ayrıldı: ${socket.id}`);
+    console.log(`Bağlantı koptu: ${socket.id}`);
     const room = rooms.get(socket.roomCode);
     if (!room) return;
 
+    const playerIndex = room.players.findIndex(p => p.id === socket.id);
+    if (playerIndex === -1) return;
+
+    // Diğer oyuncuya "geçici kopma" bildir
     const otherPlayer = room.players.find(p => p.id !== socket.id);
     if (otherPlayer) {
-      io.to(otherPlayer.id).emit('opponent-disconnected');
+      io.to(otherPlayer.id).emit('opponent-connection-lost');
     }
 
-    rooms.delete(socket.roomCode);
+    // 60 saniye bekle — bu sürede geri dönmezse odayı sil
+    if (!room.disconnectTimers) room.disconnectTimers = {};
+    room.disconnectTimers[playerIndex] = setTimeout(() => {
+      console.log(`Zaman aşımı: Oyuncu ${playerIndex + 1} geri dönmedi, oda siliniyor: ${socket.roomCode}`);
+
+      if (otherPlayer) {
+        io.to(otherPlayer.id).emit('opponent-disconnected');
+      }
+      rooms.delete(socket.roomCode);
+    }, 60000); // 60 saniye
+
+    console.log(`60 sn bekleniyor: ${socket.roomCode} (Oyuncu ${playerIndex + 1})`);
   });
 });
 
