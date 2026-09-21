@@ -6,10 +6,20 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  // Render proxy arkasında güvenilir bağlantı için
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['polling', 'websocket'],
+  allowUpgrades: true,
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Render health check — 502 hatalarını önler
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', rooms: rooms.size });
+});
 
 // ── Oyun odaları ──────────────────────────────────────────
 const rooms = new Map();
@@ -53,7 +63,7 @@ function checkWin(board, player) {
           }
           cells.push([nr, nc]);
         }
-        if (valid) return cells; // kazanan 4 hücreyi döndür
+        if (valid) return cells;
       }
     }
   }
@@ -71,23 +81,25 @@ function dropPiece(board, col, player) {
       return row;
     }
   }
-  return -1; // sütun dolu
+  return -1;
 }
 
 // ── Socket.io olayları ────────────────────────────────────
 io.on('connection', (socket) => {
   console.log(`Bağlandı: ${socket.id}`);
 
-  // Oda oluştur
+  // ── Oda oluştur ──────────────────────────────────────
   socket.on('create-room', (playerName) => {
     const code = generateRoomCode();
     const room = {
       code,
       players: [{ id: socket.id, name: playerName, score: 0 }],
       board: createEmptyBoard(),
-      currentTurn: 1, // oyuncu 1 başlar
+      currentTurn: 1,
       gameActive: false,
       winner: null,
+      disconnectTimers: {},
+      playAgainVotes: new Set(),
     };
     rooms.set(code, room);
     socket.join(code);
@@ -98,7 +110,7 @@ io.on('connection', (socket) => {
     console.log(`Oda oluşturuldu: ${code} — ${playerName}`);
   });
 
-  // Odaya katıl
+  // ── Odaya katıl ──────────────────────────────────────
   socket.on('join-room', ({ code, playerName }) => {
     const roomCode = code.toUpperCase().trim();
     const room = rooms.get(roomCode);
@@ -125,12 +137,10 @@ io.on('connection', (socket) => {
       opponentName: room.players[0].name,
     });
 
-    // Oyuncu 1'e bildir
     io.to(room.players[0].id).emit('opponent-joined', {
       opponentName: playerName,
     });
 
-    // Oyunu başlat
     io.to(roomCode).emit('game-start', {
       board: room.board,
       currentTurn: room.currentTurn,
@@ -142,7 +152,7 @@ io.on('connection', (socket) => {
     console.log(`${playerName} odaya katıldı: ${roomCode}`);
   });
 
-  // Hamle yap
+  // ── Hamle yap ────────────────────────────────────────
   socket.on('make-move', (col) => {
     const room = rooms.get(socket.roomCode);
     if (!room || !room.gameActive) return;
@@ -150,7 +160,7 @@ io.on('connection', (socket) => {
     if (col < 0 || col > 5) return;
 
     const row = dropPiece(room.board, col, socket.playerNumber);
-    if (row === -1) return; // sütun dolu
+    if (row === -1) return;
 
     const winCells = checkWin(room.board, socket.playerNumber);
 
@@ -160,8 +170,7 @@ io.on('connection', (socket) => {
       room.players[socket.playerNumber - 1].score++;
 
       io.to(socket.roomCode).emit('move-made', {
-        row,
-        col,
+        row, col,
         player: socket.playerNumber,
         board: room.board,
         currentTurn: room.currentTurn,
@@ -179,8 +188,7 @@ io.on('connection', (socket) => {
     if (isBoardFull(room.board)) {
       room.gameActive = false;
       io.to(socket.roomCode).emit('move-made', {
-        row,
-        col,
+        row, col,
         player: socket.playerNumber,
         board: room.board,
         currentTurn: room.currentTurn,
@@ -197,25 +205,22 @@ io.on('connection', (socket) => {
     room.currentTurn = room.currentTurn === 1 ? 2 : 1;
 
     io.to(socket.roomCode).emit('move-made', {
-      row,
-      col,
+      row, col,
       player: socket.playerNumber,
       board: room.board,
       currentTurn: room.currentTurn,
     });
   });
 
-  // Yeniden oyna
+  // ── Yeniden oyna ─────────────────────────────────────
   socket.on('play-again', () => {
     const room = rooms.get(socket.roomCode);
     if (!room) return;
 
-    if (!room.playAgainVotes) room.playAgainVotes = new Set();
-    room.playAgainVotes.add(socket.playerNumber); // socket.id yerine playerNumber kullan
+    room.playAgainVotes.add(socket.playerNumber);
 
     if (room.playAgainVotes.size === 2) {
       room.board = createEmptyBoard();
-      // Kaybeden başlar, beraberlikteyse sıra değişir
       room.currentTurn = room.winner ? (room.winner === 1 ? 2 : 1) : (room.currentTurn === 1 ? 2 : 1);
       room.gameActive = true;
       room.winner = null;
@@ -229,7 +234,6 @@ io.on('connection', (socket) => {
         scores: [room.players[0].score, room.players[1].score],
       });
     } else {
-      // Diğer oyuncuya bildir
       const otherPlayer = room.players.find(p => p.id !== socket.id);
       if (otherPlayer) {
         io.to(otherPlayer.id).emit('opponent-wants-rematch');
@@ -237,9 +241,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Odaya yeniden bağlanma (reconnect) ──────────────────
+  // ── Odaya yeniden bağlanma (reconnect) ───────────────
   socket.on('rejoin-room', ({ code, playerNumber, playerName }) => {
-    const roomCode = code.toUpperCase().trim();
+    const roomCode = (code || '').toUpperCase().trim();
     const room = rooms.get(roomCode);
 
     if (!room) {
@@ -254,10 +258,9 @@ io.on('connection', (socket) => {
     }
 
     // Disconnect timer'ı iptal et
-    if (room.disconnectTimers && room.disconnectTimers[playerIndex]) {
+    if (room.disconnectTimers[playerIndex]) {
       clearTimeout(room.disconnectTimers[playerIndex]);
       room.disconnectTimers[playerIndex] = null;
-      console.log(`Reconnect timer iptal: Oyuncu ${playerNumber} (${playerName})`);
     }
 
     // Oyuncu bilgilerini güncelle
@@ -267,7 +270,7 @@ io.on('connection', (socket) => {
     socket.playerNumber = playerNumber;
 
     // Diğer oyuncuya bildir
-    const otherPlayer = room.players.find((p, i) => i !== playerIndex);
+    const otherPlayer = room.players.find((_, i) => i !== playerIndex);
     if (otherPlayer) {
       io.to(otherPlayer.id).emit('opponent-reconnected');
     }
@@ -284,41 +287,43 @@ io.on('connection', (socket) => {
       scores: [room.players[0].score, room.players[1].score],
     });
 
-    console.log(`Yeniden bağlandı: ${playerName} (Oyuncu ${playerNumber}) → Oda ${roomCode}`);
+    console.log(`Yeniden bağlandı: ${playerName} → Oda ${roomCode}`);
   });
 
-  // ── Bağlantı kopması (60 sn tolerans) ──────────────────
+  // ── Bağlantı kopması (60 sn tolerans) ────────────────
   socket.on('disconnect', () => {
-    console.log(`Bağlantı koptu: ${socket.id}`);
-    const room = rooms.get(socket.roomCode);
+    console.log(`Koptu: ${socket.id}`);
+    const roomCode = socket.roomCode;
+    const room = rooms.get(roomCode);
     if (!room) return;
 
     const playerIndex = room.players.findIndex(p => p.id === socket.id);
     if (playerIndex === -1) return;
 
     // Diğer oyuncuya "geçici kopma" bildir
-    const otherPlayer = room.players.find(p => p.id !== socket.id);
-    if (otherPlayer) {
-      io.to(otherPlayer.id).emit('opponent-connection-lost');
+    const otherPlayerIndex = playerIndex === 0 ? 1 : 0;
+    if (room.players[otherPlayerIndex]) {
+      io.to(room.players[otherPlayerIndex].id).emit('opponent-connection-lost');
     }
 
-    // 60 saniye bekle — bu sürede geri dönmezse odayı sil
-    if (!room.disconnectTimers) room.disconnectTimers = {};
+    // 60 saniye bekle — geri dönmezse odayı sil
     room.disconnectTimers[playerIndex] = setTimeout(() => {
-      console.log(`Zaman aşımı: Oyuncu ${playerIndex + 1} geri dönmedi, oda siliniyor: ${socket.roomCode}`);
+      const currentRoom = rooms.get(roomCode);
+      if (!currentRoom) return;
 
-      if (otherPlayer) {
-        io.to(otherPlayer.id).emit('opponent-disconnected');
+      // Diğer oyuncunun GÜNCEL ID'sini al (reconnect olmuş olabilir)
+      const otherP = currentRoom.players[otherPlayerIndex];
+      if (otherP) {
+        io.to(otherP.id).emit('opponent-disconnected');
       }
-      rooms.delete(socket.roomCode);
-    }, 60000); // 60 saniye
-
-    console.log(`60 sn bekleniyor: ${socket.roomCode} (Oyuncu ${playerIndex + 1})`);
+      rooms.delete(roomCode);
+      console.log(`Oda silindi (zaman aşımı): ${roomCode}`);
+    }, 60000);
   });
 });
 
 // ── Sunucuyu başlat ───────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🎮 Dörde Bağla sunucusu çalışıyor: http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🎮 Dörde Bağla sunucusu çalışıyor — Port: ${PORT}`);
 });
